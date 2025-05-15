@@ -3,52 +3,58 @@ from io import BytesIO
 import requests
 import openai
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, InputFile
 from telegram.ext import (
     ApplicationBuilder,
-    ContextTypes,
     CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
 )
 
-# Load .env
+# Load environment variables
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Yo 👋 Send /drawme and I'll cartoonify your profile pic in meme style 🤡")
+    await update.message.reply_text("Send me a photo, then reply to it with /rme to cartoonify it 🤡")
 
-async def drawme(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    photos = await context.bot.get_user_profile_photos(user.id, limit=1)
-
-    if photos.total_count == 0:
-        await update.message.reply_text("You don’t have a profile photo I can use 😞")
+async def rme(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Ensure the user is replying to a photo
+    if not update.message.reply_to_message or not update.message.reply_to_message.photo:
+        await update.message.reply_text("Please reply to a photo with /rme.")
         return
 
-    file = await context.bot.get_file(photos.photos[0][-1].file_id)
-    response = requests.get(file.file_path)
-    profile_img = BytesIO(response.content)
+    # Get highest resolution photo from replied message
+    file_id = update.message.reply_to_message.photo[-1].file_id
+    file = await context.bot.get_file(file_id)
+    image_data = requests.get(file.file_path).content
+    image_stream = BytesIO(image_data)
 
-    # Generate cartoon meme image
-    await update.message.reply_text("Drawing you as a goofy cartoon... please wait 🤓")
+    await update.message.reply_text("Drawing your goofy cartoon... hang tight 🤪")
+
     try:
-        result = openai.images.generate(
+        # For now, just use prompt-only image generation
+        response = openai.images.generate(
             model="dall-e-3",
-            prompt="Turn this into a funny cartoon meme with a dumb expression, far-apart eyes, weird mouth, and saturated colors.",
-            image=profile_img,
+            prompt="A dumb, distorted cartoon version of the person in this photo. Big far-apart eyes, a weird mouth, silly expression, and funny colors. Drawn in sketchy meme style.",
             n=1,
             size="1024x1024"
         )
-        img_url = result.data[0].url
-        img_data = requests.get(img_url).content
-        await update.message.reply_photo(photo=BytesIO(img_data), caption="here you go 🤡")
+        img_url = response.data[0].url
+        cartoon = requests.get(img_url).content
+
+        await update.message.reply_photo(photo=BytesIO(cartoon), caption="here you go 🤡")
+
     except Exception as e:
         await update.message.reply_text(f"Error generating image: {e}")
 
+# Initialize bot
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("drawme", drawme))
+app.add_handler(CommandHandler("rme", rme))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start))  # fallback
 
 print("🤖 Bot is running...")
 app.run_polling()
