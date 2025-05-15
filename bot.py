@@ -45,9 +45,9 @@ async def rme(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         image_url = imgbb_response.json()["data"]["url"]
 
-        # Send to Replicate SDXL model
+        # Run Replicate model (correct slug)
         output = replicate_client.run(
-            "stability-ai/sdxl",
+            "stability-ai/stable-diffusion-xl",
             input={
                 "prompt": "A dumb-looking, meme-style cartoon portrait with far-apart eyes, a distorted mouth, and rough sketch lines. Funny, derpy, colorful.",
                 "image": image_url,
@@ -56,6 +56,7 @@ async def rme(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
         )
 
+        # Reply with image
         await update.message.reply_photo(photo=output[0], caption="Here you go 🤡")
 
     except Exception as e:
