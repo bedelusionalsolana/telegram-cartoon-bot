@@ -1,60 +1,57 @@
 import os
-from io import BytesIO
 import requests
-import openai
+from io import BytesIO
 from dotenv import load_dotenv
-from telegram import Update, InputFile
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
     MessageHandler,
-    filters,
+    filters
 )
+import replicate
 
-# Load environment variables
 load_dotenv()
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-openai.api_key = os.getenv("OPENAI_API_KEY")
+REPLICATE_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+replicate.Client(api_token=REPLICATE_TOKEN)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Send me a photo, then reply to it with /rme to cartoonify it 🤡")
+    await update.message.reply_text("Send a photo, then reply to it with /rme to make a dumb cartoon 🤪")
 
 async def rme(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # Ensure the user is replying to a photo
-    if not update.message.reply_to_message or not update.message.reply_to_message.photo:
-        await update.message.reply_text("Please reply to a photo with /rme.")
+    # Check if reply to a photo
+    replied = update.message.reply_to_message
+    if not replied or not replied.photo:
+        await update.message.reply_text("Please reply to an image with /rme.")
         return
 
-    # Get highest resolution photo from replied message
-    file_id = update.message.reply_to_message.photo[-1].file_id
-    file = await context.bot.get_file(file_id)
-    image_data = requests.get(file.file_path).content
-    image_stream = BytesIO(image_data)
+    await update.message.reply_text("Making you dumb and meme-worthy... 🧠💥")
 
-    await update.message.reply_text("Drawing your goofy cartoon... hang tight 🤪")
+    # Download photo
+    file = await context.bot.get_file(replied.photo[-1].file_id)
+    photo_data = requests.get(file.file_path).content
 
+    with open("temp_input.jpg", "wb") as f:
+        f.write(photo_data)
+
+    # Send to Replicate
     try:
-        # For now, just use prompt-only image generation
-        response = openai.images.generate(
-            model="dall-e-3",
-            prompt="A dumb, distorted cartoon version of the person in this photo. Big far-apart eyes, a weird mouth, silly expression, and funny colors. Drawn in sketchy meme style.",
-            n=1,
-            size="1024x1024"
+        output = replicate.run(
+            "cjwbw/stable-diffusion-meme:2609c6b0886cf07198db50d3a04efed4c00dba38c6c6f24e00d4d4c4a6f7a5f0",
+            input={
+                "image": open("temp_input.jpg", "rb"),
+                "caption": "make this person look dumb, weird, and meme-like in a sketchy cartoon style"
+            }
         )
-        img_url = response.data[0].url
-        cartoon = requests.get(img_url).content
-
-        await update.message.reply_photo(photo=BytesIO(cartoon), caption="here you go 🤡")
-
+        await update.message.reply_photo(photo=output, caption="here you go 🤡")
     except Exception as e:
-        await update.message.reply_text(f"Error generating image: {e}")
+        await update.message.reply_text(f"Error: {e}")
 
-# Initialize bot
+# Run bot
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("rme", rme))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, start))  # fallback
-
-print("🤖 Bot is running...")
+print("🤖 Bot is live!")
 app.run_polling()
